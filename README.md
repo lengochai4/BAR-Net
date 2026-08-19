@@ -1,2 +1,2 @@
-# DualGate-SwinUNet
+# BAR-Net
 
