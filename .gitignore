@@ -1,0 +1,18 @@
+# Data files and directories
+data_test/
+test_vol_h5/
+*.npz
+*.h5
+checkpoints/
+
+# Model Weights
+*.pth
+*.pt
+
+# Python caches and IDEs
+__pycache__/
+*.py[cod]
+*$py.class
+.vscode/
+.idea/
+.DS_Store
