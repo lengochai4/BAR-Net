@@ -167,6 +167,7 @@ async def predict_volume(file: UploadFile = File(...)):
                 vis_slice = (vis_slice * 255).astype(np.uint8)
                 
                 orig_img = Image.fromarray(vis_slice).convert("RGB")
+                orig_size = orig_img.size
                 orig_resized = orig_img.resize((224, 224), Image.BILINEAR)
                 
                 # Prepare tensor for model
@@ -182,13 +183,13 @@ async def predict_volume(file: UploadFile = File(...)):
                     probs = F.softmax(output, dim=1)
                     prediction = torch.argmax(probs, dim=1).squeeze(0).cpu().numpy()
                 
-                # Create mask image
+                # Create mask image and resize BACK to original size
                 mask_rgb = COLORS[prediction].astype(np.uint8)
-                mask_image = Image.fromarray(mask_rgb)
+                mask_image = Image.fromarray(mask_rgb).resize(orig_size, Image.NEAREST)
                 
                 # Convert both to base64
                 buf_orig = io.BytesIO()
-                orig_img.resize((224,224)).save(buf_orig, format="PNG")
+                orig_img.save(buf_orig, format="PNG")
                 original_slices.append(base64.b64encode(buf_orig.getvalue()).decode('utf-8'))
                 
                 buf_mask = io.BytesIO()
