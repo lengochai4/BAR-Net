@@ -14,7 +14,7 @@
 2. [Project Structure](#-project-structure)
 3. [Installation](#-installation)
 4. [Dataset Preparation](#-dataset-preparation)
-5. [How to Run (Web Interface)](#-how-to-run-web-interface)
+5. [Option: Running Web Diagnostic Viewer](#-option-running-the-web-diagnostic-viewer)
 6. [Training & Testing](#-training--testing)
 7. [Authors & Non-Copyright](#-authors--non-copyright)
 
@@ -97,20 +97,27 @@ To train or reproduce our results, you need to download the medical datasets and
 
 ---
 
-## 🖥️ How to Run (Web Interface)
+## 🌐 Option: Running the Web Diagnostic Viewer
 
-The web system integrates the pre-trained `best_model.pth` and dynamically performs brain/clinical segmentation purely through a beautiful graphical interface.
+If you only want to use the pre-trained model for clinical diagnosis through our beautiful graphical interface, follow these steps:
 
-1. Start the FastAPI backend server:
+1. **Folder Prerequisites:**
+   Ensure the following directories exist in your root folder. If they were naturally ignored by git, create them:
+   ```bash
+   mkdir checkpoints data_test
+   ```
+   **Important:** You MUST place your trained PyTorch weights file (named `best_model.pth`) inside the `checkpoints/` directory for the web server to load the AI model correctly.
+
+2. **Start the FastAPI backend server:**
    ```bash
    python web/app.py
    ```
    
-2. Access the Application:
+3. **Access the Application:**
    Open your preferred web browser and navigate to: **`http://localhost:8000`**
 
-3. **Usage Flow**:
-   - Upload any `.h5` 3D scan or 2D image via the Sidebar.
+4. **Usage Flow**:
+   - Upload any `.h5` 3D scan or 2D image via the Sidebar (you can use dummy scans from `data_test/`).
    - Wait 1-2 seconds for the automated pipeline to trigger inference.
    - Use the slider to explore individual transverse slices.
    - Use the *Clinical Observations* panel to write diagnosis.
