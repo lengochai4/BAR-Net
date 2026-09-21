@@ -27,6 +27,29 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let selectedFile = null;
 
+    // Set current date automatically
+    const dateInput = document.getElementById('dateInput');
+    if (dateInput) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Sync Doctor info to header visually
+    const docNameInp = document.getElementById('doctorNameInput');
+    const docRoleInp = document.getElementById('doctorRoleInput');
+    const headerName = document.querySelector('.user-details .name');
+    const headerRole = document.querySelector('.user-details .role');
+    
+    if (docNameInp && headerName) {
+        docNameInp.addEventListener('input', e => headerName.textContent = e.target.value);
+    }
+    if (docRoleInp && headerRole) {
+        docRoleInp.addEventListener('input', e => headerRole.textContent = e.target.value);
+    }
+
     imageInput.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -72,6 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Remove any slice slider if present
             const oldSlider = document.getElementById('sliceScrollerContainer');
             if (oldSlider) oldSlider.remove();
+            
+            // AUTOMATICALLY RUN PREDICTION ON UPLOAD
+            runPrediction();
 
         } else {
             selectedFile = null;
@@ -80,7 +106,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    predictBtn.addEventListener('click', async () => {
+    predictBtn.addEventListener('click', () => {
+        runPrediction();
+    });
+    
+    async function runPrediction() {
         if (!selectedFile) return;
 
         // UI updates for loading state
@@ -88,8 +118,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const loader = predictBtn.querySelector('.loader');
         
         predictBtn.disabled = true;
-        btnText.textContent = "Processing Scan...";
-        loader.classList.remove('hidden');
+        
+        if (btnText) btnText.textContent = "Processing Scan...";
+        else predictBtn.innerText = "Processing Scan...";
+        
+        if (loader) loader.classList.remove('hidden');
+        
         errorBox.classList.add('hidden');
         
         maskTools.classList.add('hidden');
@@ -148,12 +182,14 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Prediction Error:', error);
             errorBox.textContent = error.message;
             errorBox.classList.remove('hidden');
+            predictBtn.disabled = false; // re-enable on error
         } finally {
-            predictBtn.disabled = false;
-            btnText.textContent = "Run BAR-Net Segmentation";
-            loader.classList.add('hidden');
+            if (btnText) btnText.textContent = isVolumeMode ? "Loaded 3D Volume" : "Loaded Image";
+            else predictBtn.innerText = isVolumeMode ? "Loaded 3D Volume" : "Loaded Image";
+            
+            if (loader) loader.classList.add('hidden');
         }
-    });
+    }
 
     // Overlay logic
     overlayToggle.addEventListener('change', (e) => {
@@ -210,5 +246,167 @@ document.addEventListener('DOMContentLoaded', () => {
         
         blendBase.src = origData;
         blendMask.src = maskData;
+    }
+
+    // Fullscreen / Zoom logic
+    const zoomBtns = document.querySelectorAll('.zoom-btn');
+    zoomBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const panel = e.target.closest('.panel');
+            if (panel) {
+                panel.classList.toggle('fullscreen');
+                // Change icon
+                const isFs = panel.classList.contains('fullscreen');
+                if (isFs) {
+                    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>';
+                } else {
+                    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>';
+                }
+            }
+        });
+    });
+
+    // --------------------------------------------------------
+    // Export Medical Report to PNG
+    // --------------------------------------------------------
+    const saveReportBtn = document.getElementById('saveReportBtn');
+    if(saveReportBtn) {
+        saveReportBtn.addEventListener('click', generateReport);
+    }
+    
+    function generateReport() {
+        if (!blendBase.src) {
+            alert('Please process an image first before exporting.');
+            return;
+        }
+
+        const patientId = document.getElementById('patientIdInput').value || 'UnknownID';
+        const patientName = document.getElementById('patientNameInput').value || 'UnknownName';
+        const age = document.getElementById('patientAgeInput').value || '--';
+        const gender = document.getElementById('patientGenderInput').value || '--';
+        const modalities = document.getElementById('modalityInput').value || '--';
+        const date = document.getElementById('dateInput').value || '--';
+        const obs = document.getElementById('obsTextArea').value || 'No clinical observations provided.';
+        
+        const docId = document.getElementById('doctorIdInput').value || 'MEC-000';
+        const docName = document.getElementById('doctorNameInput').value || 'Unknown';
+        const docRole = document.getElementById('doctorRoleInput').value || 'Doctor';
+
+        // Layout Dimensions (UHQ Landscape)
+        const width = 2400;
+        const height = 1800;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        // Draw background
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, width, height);
+
+        // Header Title
+        ctx.fillStyle = '#3b82f6';
+        ctx.font = 'bold 50px Outfit, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('MEDICAL IMAGING REPORT - MedVision AI', width/2, 90);
+
+        // Info Section
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '30px Outfit, Arial';
+        ctx.textAlign = 'left';
+        
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('vi-VN');
+
+        let y = 180;
+        ctx.fillText(`Patient ID: ${patientId}`, 100, y);
+        ctx.fillText(`Date: ${date} (Time: ${timeStr})`, 1250, y); y += 50;
+        ctx.fillText(`Patient Name: ${patientName}`, 100, y);
+        ctx.fillText(`Modality: ${modalities}`, 1250, y); y += 50;
+        ctx.fillText(`Gender: ${gender}        Age: ${age}`, 100, y);
+        ctx.fillText(`Physician: ${docName} - ${docRole} (${docId})`, 1250, y);
+        
+        ctx.beginPath();
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 3;
+        ctx.moveTo(100, y + 40);
+        ctx.lineTo(2300, y + 40);
+        ctx.stroke();
+
+        y += 110;
+        // Images Section
+        ctx.font = 'bold 36px Outfit, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Original Scan`, 625, y);
+        ctx.fillText(`AI Segmentation (BAR-Net)`, 1775, y);
+        
+        y += 40;
+
+        // Draw Images Configuration (Full Frame horizontally)
+        const imgSize = 1050; // Nearly fills the entire 2400px width with two images
+        const margin1 = 100;
+        const margin2 = 1250;
+        
+        // Draw Original
+        ctx.drawImage(blendBase, margin1, y, imgSize, imgSize);
+        
+        // Draw Segmentation (Blended)
+        ctx.fillStyle = '#0a1120';
+        ctx.fillRect(margin2, y, imgSize, imgSize);
+        
+        if (overlayToggle.checked && blendMask.src) {
+            ctx.drawImage(blendBase, margin2, y, imgSize, imgSize);
+            ctx.globalCompositeOperation = "screen";
+            ctx.globalAlpha = parseFloat(opacitySlider.value) || 0.6;
+            ctx.drawImage(blendMask, margin2, y, imgSize, imgSize);
+            ctx.globalCompositeOperation = "source-over"; // reset
+            ctx.globalAlpha = 1.0;
+        } else if (!overlayToggle.checked && blendMask.src) {
+            ctx.drawImage(blendMask, margin2, y, imgSize, imgSize);
+        } else {
+            ctx.drawImage(blendBase, margin2, y, imgSize, imgSize);
+        }
+
+        y += imgSize + 90;
+        
+        // Observations
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#3b82f6';
+        ctx.font = 'bold 32px Outfit, Arial';
+        ctx.fillText('Clinical Observations', 100, y);
+        y += 50;
+        
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '28px Outfit, Arial';
+        
+        // Multi-line word wrap
+        const words = obs.split(' ');
+        let line = '';
+        const maxWidth = 2200;
+        
+        for(let n = 0; n < words.length; n++) {
+            const testLine = line + words[n] + ' ';
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && n > 0) {
+                ctx.fillText(line, 100, y);
+                line = words[n] + ' ';
+                y += 40;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, 100, y);
+
+        // Force download
+        let safeId = patientId.replace(/[\\/:*?"<>|]/g, '_').trim();
+        let safeName = patientName.replace(/[\\/:*?"<>|]/g, '_').trim();
+        if (!safeId) safeId = 'Scan';
+        if (!safeName) safeName = 'Report';
+        
+        const dataUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${safeId}_${safeName}.png`;
+        a.click();
     }
 });

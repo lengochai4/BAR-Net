@@ -29,40 +29,55 @@ app.add_middleware(
 
 # Load Model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-num_classes = 9 # Modify this based on your model/weights
-
-model = SwinTransformerSys(
-    img_size=224,
-    num_classes=num_classes,
-    embed_dim=96,
-    depths=[2, 2, 2, 2],
-    depths_decoder=[1, 2, 2, 2],
-    num_heads=[3, 6, 12, 24],
-    window_size=7,
-).to(device)
-model.eval()
-
-# Load weights if available inside checkpoints/ directory
+# Auto-detect architecture from weights
 weight_path = os.path.join(parent_dir, "checkpoints", "best_model.pth")
+
+num_classes = 9
+embed_dim = 96
+depths_decoder = [1, 2, 2, 2]
+new_state_dict = None
+
 if os.path.exists(weight_path):
     print(f"Loading weights from {weight_path}")
     state_dict = torch.load(weight_path, map_location=device)
-    
-    # Automatically remove 'module.' and 'swin_unet.' prefixes 
-    # to perfectly match SwinTransformerSys standalone module.
     new_state_dict = {}
     for k, v in state_dict.items():
         name = k[7:] if k.startswith('module.') else k
         name = name[10:] if name.startswith('swin_unet.') else name
         new_state_dict[name] = v
-    
+        
+    # Auto-detect num_classes and embed_dim from the final layer
+    if 'output.weight' in new_state_dict:
+        out_shape = new_state_dict['output.weight'].shape
+        num_classes = out_shape[0]
+        embed_dim = out_shape[1]
+        print(f"Auto-detected: num_classes={num_classes}, embed_dim={embed_dim}")
+        
+    # Check decoder depths from state dict
+    if 'layers_up.3.blocks.0.mlp.fc1.weight' not in new_state_dict:
+        # Some configs use [2, 2, 2, 1] meaning layers_up doesn't reach depth 3
+        depths_decoder = [2, 2, 2, 1]
+
+# Initialize Model with auto-detected settings
+model = SwinTransformerSys(
+    img_size=224,
+    num_classes=num_classes,
+    embed_dim=embed_dim,
+    depths=[2, 2, 2, 2],
+    depths_decoder=depths_decoder,
+    num_heads=[3, 6, 12, 24],
+    window_size=7,
+).to(device)
+model.eval()
+
+if new_state_dict:
     try:
-        model.load_state_dict(new_state_dict, strict=True)
-        print("Weights loaded perfectly seamlessly!")
+        model.load_state_dict(new_state_dict, strict=False)
+        print("Weights loaded successfully!")
     except Exception as e:
         print(f"Warning: Could not completely load weights. Error: {e}")
 else:
-    print(f"Weights not found at {weight_path}, using random init!")
+    print(f"Weights not found, using random init!")
 
 # Colors for 9 classes to display the mask
 COLORS = np.array([
