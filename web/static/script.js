@@ -158,21 +158,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                 } else {
                     const maskSrc = `data:image/png;base64,${data.mask}`;
-                    blendMask.src = maskSrc;
+                    // Baked image: show directly in blendBase, no overlay needed
+                    blendBase.src = maskSrc;
+                    blendMask.src = '';
+                    blendMask.style.opacity = 0;
                 }
                 
-                // Show tools and results
+                // Show results
                 maskTools.classList.remove('hidden');
                 resultContainer.classList.add('has-content');
                 blendWrapper.classList.remove('hidden');
-                
-                // Apply current opacity
-                blendMask.style.opacity = opacitySlider.value;
-                if (overlayToggle.checked) {
-                    blendBase.classList.remove('hidden');
-                } else {
-                    blendBase.classList.add('hidden');
-                }
 
             } else {
                 throw new Error(data.message || "An error occurred during prediction.");
@@ -240,12 +235,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const origData = `data:image/png;base64,${volumeSlices.original[currentSliceIndex]}`;
         const maskData = `data:image/png;base64,${volumeSlices.mask[currentSliceIndex]}`;
         
-        // Update both the original preview block and the blendBase
+        // LEFT panel: pure original CT
         originalImg.src = origData;
         originalImg.classList.remove('hidden');
+        originalContainer.classList.add('has-content');
         
-        blendBase.src = origData;
-        blendMask.src = maskData;
+        // RIGHT panel: blend using canvas
+        blendToCanvas(origData, maskData);
+    }
+
+    function blendToCanvas(origSrc, maskSrc) {
+        // Get or create canvas inside blendWrapper
+        let canvas = document.getElementById('blendCanvas');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.id = 'blendCanvas';
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            canvas.style.objectFit = 'contain';
+            blendWrapper.innerHTML = ''; // clear old img tags
+            blendWrapper.appendChild(canvas);
+        }
+        
+        const origImg = new Image();
+        origImg.onload = function() {
+            canvas.width = origImg.naturalWidth;
+            canvas.height = origImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Draw original CT
+            ctx.drawImage(origImg, 0, 0);
+            // Draw mask on top with 70% opacity
+            const maskImg = new Image();
+            maskImg.onload = function() {
+                ctx.globalAlpha = 0.70;
+                ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
+                ctx.globalAlpha = 1.0;
+            };
+            maskImg.src = maskSrc;
+        };
+        origImg.src = origSrc;
     }
 
     // Fullscreen / Zoom logic
@@ -275,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function generateReport() {
-        if (!blendBase.src) {
+        if (!originalImg.src) {
             alert('Please process an image first before exporting.');
             return;
         }
@@ -348,23 +377,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const margin2 = 1250;
         
         // Draw Original
-        ctx.drawImage(blendBase, margin1, y, imgSize, imgSize);
+        if (originalImg.src) {
+            ctx.drawImage(originalImg, margin1, y, imgSize, imgSize);
+        }
         
-        // Draw Segmentation (Blended)
+        // Draw Segmentation
         ctx.fillStyle = '#0a1120';
         ctx.fillRect(margin2, y, imgSize, imgSize);
         
-        if (overlayToggle.checked && blendMask.src) {
-            ctx.drawImage(blendBase, margin2, y, imgSize, imgSize);
-            ctx.globalCompositeOperation = "screen";
-            ctx.globalAlpha = parseFloat(opacitySlider.value) || 0.6;
-            ctx.drawImage(blendMask, margin2, y, imgSize, imgSize);
-            ctx.globalCompositeOperation = "source-over"; // reset
-            ctx.globalAlpha = 1.0;
-        } else if (!overlayToggle.checked && blendMask.src) {
-            ctx.drawImage(blendMask, margin2, y, imgSize, imgSize);
-        } else {
-            ctx.drawImage(blendBase, margin2, y, imgSize, imgSize);
+        // Fetch segmentation image depending on mode
+        const segmentationSource = isVolumeMode ? document.getElementById('blendCanvas') : blendBase;
+        if (segmentationSource && (segmentationSource.src || isVolumeMode)) {
+            ctx.drawImage(segmentationSource, margin2, y, imgSize, imgSize);
         }
 
         y += imgSize + 90;

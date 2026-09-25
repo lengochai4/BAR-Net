@@ -4,6 +4,7 @@ test_vol_h5/
 *.npz
 *.h5
 checkpoints/
+pretrained_ckpt/
 
 # Model Weights
 *.pth

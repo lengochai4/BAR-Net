@@ -9,18 +9,18 @@
 
 ---
 
-## 📋 Table of Contents
-1. [Model Architecture](#-model-architecture)
-2. [Project Structure](#-project-structure)
-3. [Installation](#-installation)
-4. [Dataset Preparation](#-dataset-preparation)
-5. [Option: Running Web Diagnostic Viewer](#-option-running-the-web-diagnostic-viewer)
-6. [Training & Testing](#-training--testing)
-7. [Authors & Non-Copyright](#-authors--non-copyright)
+## Table of Contents
+1. [Model Architecture](#model-architecture)
+2. [Project Structure](#project-structure)
+3. [Installation](#installation)
+4. [Dataset Preparation](#dataset-preparation)
+5. [Option: Running Web Diagnostic Viewer](#option-running-the-web-diagnostic-viewer)
+6. [Training & Testing](#training--testing)
+7. [Authors & Non-Copyright](#authors--non-copyright)
 
 ---
 
-## 🧠 Model Architecture
+## Model Architecture
 
 **BAR-Net (Boundary-Aware Refinement Network)** is built upon a hybrid vision-transformer architecture optimized for volumetric medical imaging.
 
@@ -30,34 +30,36 @@
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 BAR-Net/
 │
 ├── checkpoints/             # Directory to store trained PyTorch model weights (.pth)
-├── configs/                 # SwinTransformer configuration files
+├── configs/                 # SwinTransformer configuration files (.yaml)
 ├── data_test/               # Temporary testing datasets and raw files
 ├── datasets/                # Contains dataloaders and pre-processed dataset folders
-│   ├── dataset_synapse.py   # Dataset pipeline for loading .h5 and .npz
+│   └── dataset_synapse.py   # Dataset pipeline for loading .h5 and .npz
 │
 ├── lists/                   # Text files mapping train/val split indices
 ├── networks/                # Deep Learning Architecture
-│   ├── swin_transformer_unet_skip_expand_decoder_sys.py # Core BAR-Net Backbone Model
+│   ├── swin_transformer_unet_skip_expand_decoder_sys.py # Swin-Unet Sys Logic
+│   └── vision_transformer.py                            # Core SwinUnet Model Class
 │
 ├── web/                     # Frontend and Backend for Clinical Viewer Web App
 │   ├── app.py               # FastAPI server to handle AI Inference dynamically
 │   └── static/              # HTML/CSS/JS frontend logic and styling elements
 │
 ├── requirements.txt         # Project dependencies
-├── train.py / trainer.py    # Main training loop scripts
-├── test.py                  # Evaluation benchmark scripts
+├── train.py                 # Main training loop script
+├── trainer.py               # Trainer logic script
+├── test.py                  # Evaluation benchmark script
 └── README.md                # Project documentation
 ```
 
 ---
 
-## 🚀 Installation
+## Installation
 
 Ensure you have Python 3.8+ installed. It is recommended to use a virtual environment (Anaconda or Venv).
 
@@ -75,12 +77,12 @@ Ensure you have Python 3.8+ installed. It is recommended to use a virtual enviro
 
 ---
 
-## 💾 Dataset Preparation
+##  Dataset Preparation
 
 To train or reproduce our results, you need to download the medical datasets and structure them correctly.
 
 1. **Download Dataset:**
-   👉 *[Insert Dataset Download Link Here]*
+    *[Insert Dataset Download Link Here]*
 
 2. **Extract and map paths:** 
    Place the volumetric images inside the preconfigured raw directory. Ensure that the dataset consists of `.npz` slices for training and `.npy.h5` volumes for validation.
@@ -97,7 +99,7 @@ To train or reproduce our results, you need to download the medical datasets and
 
 ---
 
-## 🌐 Option: Running the Web Diagnostic Viewer
+## Option: Running the Web Diagnostic Viewer
 
 If you only want to use the pre-trained model for clinical diagnosis through our beautiful graphical interface, follow these steps:
 
@@ -114,18 +116,18 @@ If you only want to use the pre-trained model for clinical diagnosis through our
    ```
    
 3. **Access the Application:**
-   Open your preferred web browser and navigate to: **`http://localhost:8000`**
+   Open your preferred web browser and navigate to: **`http://localhost:8001`**
 
 4. **Usage Flow**:
    - Upload any `.h5` 3D scan or 2D image via the Sidebar (you can use dummy scans from `data_test/`).
    - Wait 1-2 seconds for the automated pipeline to trigger inference.
    - Use the slider to explore individual transverse slices.
    - Use the *Clinical Observations* panel to write diagnosis.
-   - Export an Ultra-HD Professional Report clicking `Save Report (PNG)`.
+   - Export an Ultra-HD Professional Report by clicking `Save Report (PNG)`.
 
 ---
 
-## 🔬 Training & Testing
+## Training & Testing
 
 **Training the model:**
 ```bash
@@ -139,7 +141,7 @@ python test.py --dataset Synapse --is_savenii --volume_path data/Synapse/test_vo
 
 ---
 
-## 🧑‍⚕️ Authors & Non-Copyright
+## Authors & Non-Copyright
 
 **Research Project:** BARNet: A Boundary-Aware Refinement Network for Medical Image Segmentation  
 **Conference/Year:** [Conference Name], 2026

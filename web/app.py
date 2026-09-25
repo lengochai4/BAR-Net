@@ -15,7 +15,9 @@ import os
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from networks.swin_transformer_unet_skip_expand_decoder_sys import SwinTransformerSys
+from networks.vision_transformer import SwinUnet
+from config import get_config
+import argparse
 
 app = FastAPI()
 
@@ -27,89 +29,89 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Load Model Configuration
+parser = argparse.ArgumentParser()
+parser.add_argument('--cfg', type=str, default='configs/swin_tiny_patch4_window7_224_lite.yaml')
+parser.add_argument('--opts', default=None, nargs='+')
+parser.add_argument('--dataset', type=str, default='Synapse')
+parser.add_argument('--batch_size', type=int, default=24)
+parser.add_argument('--zip', action='store_true')
+parser.add_argument('--cache-mode', type=str, default='part')
+parser.add_argument('--resume', type=str)
+parser.add_argument('--accumulation-steps', type=int)
+parser.add_argument('--use-checkpoint', action='store_true')
+parser.add_argument('--amp-opt-level', type=str, default='O1')
+parser.add_argument('--tag', type=str)
+parser.add_argument('--eval', action='store_true')
+parser.add_argument('--throughput', action='store_true')
+args, _ = parser.parse_known_args()
+
+yaml_path = os.path.join(parent_dir, "configs", "swin_tiny_patch4_window7_224_lite.yaml")
+if os.path.exists(yaml_path):
+    args.cfg = yaml_path
+config = get_config(args)
+
 # Load Model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# Auto-detect architecture from weights
+model = SwinUnet(config, img_size=224, num_classes=9).to(device)
+model.eval()
+
 weight_path = os.path.join(parent_dir, "checkpoints", "best_model.pth")
-
-num_classes = 9
-embed_dim = 96
-depths_decoder = [1, 2, 2, 2]
-new_state_dict = None
-
 if os.path.exists(weight_path):
     print(f"Loading weights from {weight_path}")
     state_dict = torch.load(weight_path, map_location=device)
+    
+    if "model" in state_dict and isinstance(state_dict["model"], dict):
+        state_dict = state_dict["model"]
+    elif "state_dict" in state_dict and isinstance(state_dict["state_dict"], dict):
+        state_dict = state_dict["state_dict"]
+        
     new_state_dict = {}
     for k, v in state_dict.items():
+        # Remove 'module.' prefix if wrapped in DataParallel
         name = k[7:] if k.startswith('module.') else k
-        name = name[10:] if name.startswith('swin_unet.') else name
         new_state_dict[name] = v
         
-    # Auto-detect num_classes and embed_dim from the final layer
-    if 'output.weight' in new_state_dict:
-        out_shape = new_state_dict['output.weight'].shape
-        num_classes = out_shape[0]
-        embed_dim = out_shape[1]
-        print(f"Auto-detected: num_classes={num_classes}, embed_dim={embed_dim}")
-        
-    # Check decoder depths from state dict
-    if 'layers_up.3.blocks.0.mlp.fc1.weight' not in new_state_dict:
-        # Some configs use [2, 2, 2, 1] meaning layers_up doesn't reach depth 3
-        depths_decoder = [2, 2, 2, 1]
-
-# Initialize Model with auto-detected settings
-model = SwinTransformerSys(
-    img_size=224,
-    num_classes=num_classes,
-    embed_dim=embed_dim,
-    depths=[2, 2, 2, 2],
-    depths_decoder=depths_decoder,
-    num_heads=[3, 6, 12, 24],
-    window_size=7,
-).to(device)
-model.eval()
-
-if new_state_dict:
     try:
-        model.load_state_dict(new_state_dict, strict=False)
-        print("Weights loaded successfully!")
+        missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
+        print("Weights loaded! Missing keys:", len(missing), "Unexpected keys:", len(unexpected))
+        if len(missing) > 0:
+            print("First 5 missing:", missing[:5])
     except Exception as e:
         print(f"Warning: Could not completely load weights. Error: {e}")
 else:
     print(f"Weights not found, using random init!")
 
-# Colors for 9 classes to display the mask
+# Colors for 9 classes to display the mask (RGBA Format)
 COLORS = np.array([
-    [0, 0, 0],         # Background - Black
-    [255, 0, 0],       # Class 1 - Red
-    [0, 255, 0],       # Class 2 - Green
-    [0, 0, 255],       # Class 3 - Blue
-    [255, 255, 0],     # Class 4 - Yellow
-    [255, 0, 255],     # Class 5 - Magenta
-    [0, 255, 255],     # Class 6 - Cyan
-    [128, 0, 0],       # Class 7 - Maroon
-    [0, 128, 0],       # Class 8 - Olive
-])
+    [0, 0, 0, 0],           # Background - Fully Transparent
+    [230, 80, 80, 200],     # Class 1 - Aorta (Red/Coral)
+    [100, 150, 210, 200],   # Class 2 - Left Kidney (Blue)
+    [80, 180, 100, 200],    # Class 3 - Right Kidney (Green)
+    [240, 230, 90, 200],    # Class 4 - Liver (Yellow/Gold)
+    [255, 0, 255, 200],     # Class 5 - Magenta
+    [0, 255, 255, 200],     # Class 6 - Cyan
+    [128, 0, 0, 200],       # Class 7 - Maroon
+    [0, 128, 0, 200],       # Class 8 - Olive
+], dtype=np.uint8)
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # Preprocess Image
+        # Convert to Grayscale (1-channel) to match training data
+        image = Image.open(io.BytesIO(contents)).convert("L")
         orig_size = image.size
+        
         # Resize to 224x224
         image_resized = image.resize((224, 224), Image.BILINEAR)
-        img_array = np.array(image_resized) / 255.0
         
-        # Normalize (Assuming standard ImageNet normalization, adjust if different for your model)
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-        img_array = (img_array - mean) / std
+        # Convert to numpy and normalize identically to h5 (usually 0-1 or min-max if needed, but since it's an image, 0-1 is safe natively)
+        img_array = np.array(image_resized, dtype=np.float32) / 255.0
         
-        img_tensor = torch.tensor(img_array, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0).to(device)
+        from scipy.ndimage import zoom
+        # No ImageNet normalization! Just raw 1-channel float values, replicated internally by SwinUnet
+        img_tensor = torch.from_numpy(img_array).unsqueeze(0).unsqueeze(0).to(device)
 
         with torch.no_grad():
             output = model(img_tensor)
@@ -118,13 +120,19 @@ async def predict(file: UploadFile = File(...)):
             probs = F.softmax(output, dim=1)
             prediction = torch.argmax(probs, dim=1).squeeze(0).cpu().numpy() # [224, 224]
 
-        # Convert prediction to RGB Image
-        mask_rgb = COLORS[prediction].astype(np.uint8)
-        mask_image = Image.fromarray(mask_rgb).resize(orig_size, Image.NEAREST)
+        # Create RGBA base from original (full-size) image
+        orig_img_rgba = Image.fromarray(np.array(image_resized, dtype=np.uint8)).convert("RGBA").resize(orig_size, Image.BILINEAR)
         
-        # Encode mask to base64 to send back to frontend
+        # Convert prediction to RGBA Image (at 224x224 prediction)
+        mask_rgba = COLORS[prediction.astype(int)]
+        mask_only_img = Image.fromarray(mask_rgba, mode='RGBA').resize(orig_size, Image.NEAREST)
+        
+        # BAKE THE MASK ON TOP OF ORIGINAL IMAGE IN PYTHON (same size now)
+        blended_image = Image.alpha_composite(orig_img_rgba, mask_only_img)
+        
+        # Encode blended image to base64
         buffered = io.BytesIO()
-        mask_image.save(buffered, format="PNG")
+        blended_image.convert("RGB").save(buffered, format="PNG")
         mask_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         
         return {"status": "success", "mask": mask_base64}
@@ -157,25 +165,24 @@ async def predict_volume(file: UploadFile = File(...)):
                 
             vol = data['image'][:]  # shape: [slices, H, W]
             
+            from scipy.ndimage import zoom
+            
+            total_slices = vol.shape[0]
+            sampled_indices = list(range(total_slices))
+            print(f"[INFO] Volume has {total_slices} slices, processing all")
+            
             # Predict slice by slice
-            for i in range(vol.shape[0]):
+            for idx, i in enumerate(sampled_indices):
                 slice_2d = vol[i, :, :]
                 
-                # Normalize origin slice for viewing
-                s_min, s_max = slice_2d.min(), slice_2d.max()
-                vis_slice = (slice_2d - s_min) / (s_max - s_min + 1e-8)
-                vis_slice = (vis_slice * 255).astype(np.uint8)
-                
-                orig_img = Image.fromarray(vis_slice).convert("RGB")
-                orig_size = orig_img.size
-                orig_resized = orig_img.resize((224, 224), Image.BILINEAR)
-                
-                # Prepare tensor for model
-                img_array = np.array(orig_resized) / 255.0
-                mean = np.array([0.485, 0.456, 0.406])
-                std = np.array([0.229, 0.224, 0.225])
-                img_array = (img_array - mean) / std
-                img_tensor = torch.tensor(img_array, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0).to(device)
+                # --- 1. Prepare raw slice FOR MODEL (just like test.py) ---
+                x, y = slice_2d.shape[0], slice_2d.shape[1]
+                if x != 224 or y != 224:
+                    model_input_slice = zoom(slice_2d, (224 / x, 224 / y), order=3)
+                else:
+                    model_input_slice = slice_2d
+                    
+                img_tensor = torch.from_numpy(model_input_slice).unsqueeze(0).unsqueeze(0).float().to(device)
                 
                 # Inference
                 with torch.no_grad():
@@ -183,17 +190,36 @@ async def predict_volume(file: UploadFile = File(...)):
                     probs = F.softmax(output, dim=1)
                     prediction = torch.argmax(probs, dim=1).squeeze(0).cpu().numpy()
                 
-                # Create mask image and resize BACK to original size
-                mask_rgb = COLORS[prediction].astype(np.uint8)
-                mask_image = Image.fromarray(mask_rgb).resize(orig_size, Image.NEAREST)
+                # Zoom prediction back to original resolution OUTSIDE torch context
+                if x != 224 or y != 224:
+                    prediction = zoom(prediction, (x / 224, y / 224), order=0)
+                prediction = prediction.astype(int)
                 
-                # Convert both to base64
+                # DEBUG: Print predicted classes for first and middle slice
+                mid_idx = len(sampled_indices) // 2
+                if idx == 0 or idx == mid_idx:
+                    unique_classes = np.unique(prediction)
+                    print(f"[DEBUG] Slice index {i} (sample {idx}): unique classes = {unique_classes}")
+                
+                # --- 2. Prepare visual slices FOR FRONTEND ---
+                s_min, s_max = slice_2d.min(), slice_2d.max()
+                vis_slice = (slice_2d - s_min) / (s_max - s_min + 1e-8)
+                vis_slice = (vis_slice * 255).astype(np.uint8)  # shape: (x, y)
+                orig_pil = Image.fromarray(vis_slice, mode='L').convert("RGB")
+                
+                # Clamp prediction values to valid range [0, 8]
+                pred_clamped = np.clip(prediction, 0, len(COLORS) - 1)
+                mask_rgba = COLORS[pred_clamped]           # shape: (x, y, 4)
+                mask_pil = Image.fromarray(mask_rgba, mode='RGBA')
+                
+                # Convert original to base64
                 buf_orig = io.BytesIO()
-                orig_img.save(buf_orig, format="PNG")
+                orig_pil.save(buf_orig, format="PNG")
                 original_slices.append(base64.b64encode(buf_orig.getvalue()).decode('utf-8'))
                 
+                # Convert MASK (RGBA with transparent background) to base64
                 buf_mask = io.BytesIO()
-                mask_image.save(buf_mask, format="PNG")
+                mask_pil.save(buf_mask, format="PNG")
                 mask_slices.append(base64.b64encode(buf_mask.getvalue()).decode('utf-8'))
                 
         # Clean up temp file
@@ -218,4 +244,4 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
