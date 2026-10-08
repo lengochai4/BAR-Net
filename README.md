@@ -82,7 +82,7 @@ Ensure you have Python 3.8+ installed. It is recommended to use a virtual enviro
 To train or reproduce our results, you need to download the medical datasets and structure them correctly.
 
 1. **Download Dataset:**
-    *[Insert Dataset Download Link Here]*
+    *[Synapse Dataset](https://www.kaggle.com/datasets/dogcdt/synapse)*
 
 2. **Extract and map paths:** 
    Place the volumetric images inside the preconfigured raw directory. Ensure that the dataset consists of `.npz` slices for training and `.npy.h5` volumes for validation.
